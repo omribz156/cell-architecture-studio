@@ -1,12 +1,42 @@
-import { mkdir } from "node:fs/promises";
+import { access, mkdir } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { chromium } from "playwright-core";
 import { PNG } from "pngjs";
 
 const url = process.env.APP_URL ?? "http://127.0.0.1:5173/";
-const chromePath =
-  process.env.CHROME_PATH ?? "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 const outDir = new URL("../verification/", import.meta.url);
+
+const browserPathsByPlatform = {
+  darwin: ["/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"],
+  linux: [
+    "/usr/bin/google-chrome",
+    "/usr/bin/google-chrome-stable",
+    "/usr/bin/chromium",
+    "/usr/bin/chromium-browser",
+  ],
+  win32: [
+    `${process.env.ProgramFiles ?? "C:\\Program Files"}\\Google\\Chrome\\Application\\chrome.exe`,
+    `${process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)"}\\Google\\Chrome\\Application\\chrome.exe`,
+    `${process.env.LOCALAPPDATA ?? ""}\\Google\\Chrome\\Application\\chrome.exe`,
+    `${process.env.ProgramFiles ?? "C:\\Program Files"}\\Microsoft\\Edge\\Application\\msedge.exe`,
+    `${process.env["ProgramFiles(x86)"] ?? "C:\\Program Files (x86)"}\\Microsoft\\Edge\\Application\\msedge.exe`,
+  ],
+};
+
+async function resolveChromePath() {
+  const candidates = [process.env.CHROME_PATH, ...(browserPathsByPlatform[process.platform] ?? [])].filter(Boolean);
+
+  for (const candidate of candidates) {
+    try {
+      await access(candidate);
+      return candidate;
+    } catch {
+      // Try the next known browser path.
+    }
+  }
+
+  throw new Error("Chrome or Edge executable not found. Set CHROME_PATH to run verification.");
+}
 
 function outPath(fileName) {
   return fileURLToPath(new URL(fileName, outDir));
@@ -164,6 +194,7 @@ async function verifyInteractions(browser) {
 
 await mkdir(outDir, { recursive: true });
 
+const chromePath = await resolveChromePath();
 const browser = await chromium.launch({
   executablePath: chromePath,
   headless: true,
